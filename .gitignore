@@ -1,2 +1,4 @@
 text2reward/run_metaworld/wandb/
 text2reward/run_metaworld/logs/
+**/__pycache__/
+*txt

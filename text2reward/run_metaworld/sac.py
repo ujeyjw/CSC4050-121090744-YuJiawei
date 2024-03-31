@@ -42,7 +42,6 @@ class ContinuousTaskWrapper(gym.Wrapper):
             info["TimeLimit.truncated"] = False
         return ob, rew, done, info
 
-
 class SuccessInfoWrapper(gym.Wrapper):
     def step(self, action):
         ob, rew, done, info = super().step(action)

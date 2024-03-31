@@ -13,7 +13,6 @@ class RewardFunctionConverter:
 
     def specific_to_general(self, specific_code: str) -> str:
         general_code = specific_code
-
         # replace specific terms with general terms
         for k, v in self.map_dict.items():
             general_code = general_code.replace(v, k)
@@ -21,9 +20,7 @@ class RewardFunctionConverter:
         return general_code
 
     def general_to_specific(self, general_code: str) -> str:
-
         specific_code = general_code
-
         # replace general terms with specific terms
         for k, v in self.map_dict.items():
             specific_code = specific_code.replace(k, v)

@@ -11,7 +11,6 @@ from langchain.chains import LLMChain
 from langchain_openai import ChatOpenAI
 from langchain.callbacks.manager import CallbackManagerForLLMRun
 from langchain.llms.base import LLM
-
 from code_generation.post_process.post_process import RewardFunctionConverter
 
 
@@ -79,11 +78,12 @@ class ZeroShotGenerator:
         else:
             raise ValueError(f"Model name {model_name} not supported!")
 
-    def generate_code(self, instruction: str, map_dict: dict) -> Tuple[str, str]:
+    def generate_code(self, instruction:str, environment: str, action:str, map_dict: dict) -> Tuple[str, str]:
         code_content = ""
         while True:
-            response = self.chain.run(**{"instruction": instruction})
+            response = self.chain.run(**{"environment": environment, "action": action, "instruction": instruction})
             pattern = r"\```python\n(.+?)\n```" if "```python" in response else r"\```\n(.+?)\n```"
+            
             match = re.search(pattern, response, re.DOTALL)
             if match:
                 code_content = match.group(1)
