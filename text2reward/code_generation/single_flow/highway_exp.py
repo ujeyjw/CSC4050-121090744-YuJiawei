@@ -12,11 +12,50 @@ instruction_mapping = {
     "Racetrack": "A continuous control environment, where the he agent has to follow the tracks while avoiding collisions with other vehicles.",
 }
 
-kinematics = """
-
+Highway = """
+class HighwayEnv:
+	self.config = {
+	"observation": {"type": "Kinematics"},
+	"action": {
+		"type": "DiscreteMetaAction",
+	},
+	"lanes_count": 4, 
+	"vehicles_count": 50,
+	"controlled_vehicles": 1, #the number of controlled vehicles
+	"initial_lane_id": None, #id of the lane to spawn in
+	"ego_spacing": 2, # ratio of spacing to the front vehicle, 1 being the default
+	"vehicles_density": 1, 
+	"collision_reward": -1,  # The reward received when colliding with a vehicle.
+	"right_lane_reward": 0.1,  # The reward received when driving on the right-most lanes, linearly mapped to
+	# zero for other lanes.
+	"high_speed_reward": 0.4,  # The reward received when driving at full speed, linearly mapped to zero for
+	# lower speeds according to config["reward_speed_range"].
+	"lane_change_reward": 0,  # The reward received at each lane change action.
+	"reward_speed_range": [20, 30], #the speed range which can get reward
+	"other_vehicles_type": "highway_env.vehicle.behavior.IDMVehicle",
+	"normalize_reward": True, #normalize reward to [0, 1]
+	}
+	self.vehicle : Vehicle
+	self.road : Road
+class Vehicle:
+	self.road : the road instance where the Vehicle is placed in
+	self.position : cartesian position of Vehicle in the surface
+	self.heading : the angle from positive direction of horizontal axis
+    self.speed : cartesian speed of Vehicle in the surface
+    self.lane_index : index of the lane in which the vehicle is located. the closer the vehicle is to the right, the larger the lane_index is
+    self.lane : the lane in which the vehicle is located
+    self.crashed : bool, whether the vehicle is crashed or not
+    self.direction : np.array([np.cos(self.heading), np.sin(self.heading)])
+    self.velocity : self.speed * self.direction
+    self.on_road : bool, Is the object on its current lane, or off-road?
+class Road:
+	self.network: RoadNetwork, the road network describing the lanes
+class RoadNetwork:
+	def all_side_lanes:-> List[lane_index] 
+	#all lanes belonging to the same road.
 """
 environment_mapping = {
-    "Kinematics" : 
+    "Highway" : Highway
     
 }
 
