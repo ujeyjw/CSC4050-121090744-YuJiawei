@@ -78,10 +78,10 @@ class ZeroShotGenerator:
         else:
             raise ValueError(f"Model name {model_name} not supported!")
 
-    def generate_code(self, instruction:str, environment: str, action:str, map_dict: dict) -> Tuple[str, str]:
+    def generate_code(self, environment: str,instruction:str, map_dict: dict) -> Tuple[str, str]:
         code_content = ""
         while True:
-            response = self.chain.run(**{"environment": environment, "action": action, "instruction": instruction})
+            response = self.chain.run(**{"environment": environment,  "instruction": instruction})
             pattern = r"\```python\n(.+?)\n```" if "```python" in response else r"\```\n(.+?)\n```"
             
             match = re.search(pattern, response, re.DOTALL)
@@ -97,6 +97,8 @@ class ZeroShotGenerator:
 
         # Post-processing, replace the general terms with specific terms
         converter = RewardFunctionConverter(map_dict)
-        specific_code = converter.general_to_specific(general_code)
+        
+        # specific_code = converter.general_to_specific(general_code)
 
-        return general_code, specific_code
+        # return general_code, specific_code
+        return general_code

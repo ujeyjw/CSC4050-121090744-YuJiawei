@@ -15,7 +15,6 @@ instruction_mapping = {
 Highway = """
 class HighwayEnv:
 	self.config = {
-	"observation": {"type": "Kinematics"},
 	"action": {
 		"type": "DiscreteMetaAction",
 	},
@@ -42,8 +41,9 @@ class Vehicle:
 	self.position : cartesian position of Vehicle in the surface
 	self.heading : the angle from positive direction of horizontal axis
     self.speed : cartesian speed of Vehicle in the surface
-    self.lane_index : index of the lane in which the vehicle is located. the closer the vehicle is to the right, the larger the lane_index is
-    self.lane : the lane in which the vehicle is located
+    self.lane : the lane in which the vehicle is located, a lane is encoded as an edge in the road network
+    self.lane_index : a tuple (origin node, destination node, lane id on the road)
+    self.lane_index[2] : index of the lane in which the vehicle is located. the closer the vehicle is to the right, the larger the lane_index is
     self.crashed : bool, whether the vehicle is crashed or not
     self.direction : np.array([np.cos(self.heading), np.sin(self.heading)])
     self.velocity : self.speed * self.direction
@@ -53,21 +53,44 @@ class Road:
 class RoadNetwork:
 	def all_side_lanes:-> List[lane_index] 
 	#all lanes belonging to the same road.
-"""
+class DiscreteMetaAction:
+    #An discrete action space of meta-actions: lane changes, and cruise control set-point.
+    ACTIONS_ALL = {0: "LANE_LEFT", 1: "IDLE", 2: "LANE_RIGHT", 3: "FASTER", 4: "SLOWER"}
+""".strip()
+
+Merge = """
+""".strip()
+
+Roundabout = """
+""".strip()
+
+Parking = """
+""".strip()
+
+Intersection = """
+""".strip()
+
+Racetrack = """
+""".strip()
+
 environment_mapping = {
-    "Highway" : Highway
-    
+    "Highway" : Highway,
+    "Merge" : Merge,
+    "Roundabout" : Roundabout,
+    "Parking" : Parking,
+    "Intersection" : Intersection,
+    "Racetrack" : Racetrack
 }
 
-# mapping_dicts = {
-#     "self.robot.ee_position": "obs[:3]",
-#     "self.robot.gripper_openness": "obs[3]",
-#     "self.obj1.position": "obs[4:7]",
-#     "self.obj1.quaternion": "obs[7:11]",
-#     "self.obj2.position": "obs[11:14]",
-#     "self.obj2.quaternion": "obs[14:18]",
-#     "self.goal_position": "self.env._get_pos_goal()",
-# }
+mapping_dicts = {
+    "self.robot.ee_position": "obs[:3]",
+    "self.robot.gripper_openness": "obs[3]",
+    "self.obj1.position": "obs[4:7]",
+    "self.obj1.quaternion": "obs[7:11]",
+    "self.obj2.position": "obs[11:14]",
+    "self.obj2.quaternion": "obs[14:18]",
+    "self.goal_position": "self.env._get_pos_goal()",
+}
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -76,7 +99,7 @@ if __name__ == '__main__':
                         help="choose one task from: Highway, Merge, Roundabout, Parking, Intersection, Racetrack")
     parser.add_argument('--FILE_PATH', type=str, default=None)
     parser.add_argument('--MODEL_NAME', type=str, default="gpt-4")
-
+    
     args = parser.parse_args()
     # File path to save result
     if args.FILE_PATH == None:
@@ -84,10 +107,11 @@ if __name__ == '__main__':
     os.makedirs(args.FILE_PATH, exist_ok=True)
 
     code_generator = ZeroShotGenerator(HIGHWAY_PROMPT, args.MODEL_NAME)
-    general_code, specific_code = code_generator.generate_code(instruction_mapping[args.TASK], mapping_dicts)
+    # general_code, specific_code = code_generator.generate_code(environment_mapping[args.TASK], instruction_mapping[args.TASK], mapping_dicts)
+    general_code = code_generator.generate_code(environment_mapping[args.TASK], instruction_mapping[args.TASK], mapping_dicts)
 
     with open(os.path.join(args.FILE_PATH, "general.py"), "w") as f:
         f.write(general_code)
 
-    with open(os.path.join(args.FILE_PATH, "specific.py"), "w") as f:
-        f.write(specific_code)
+    # with open(os.path.join(args.FILE_PATH, "specific.py"), "w") as f:
+    #     f.write(specific_code)
