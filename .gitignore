@@ -2,3 +2,5 @@ text2reward/run_metaworld/wandb/
 text2reward/run_metaworld/logs/
 **/__pycache__/
 *txt
+text2reward/run_highway/highway_ppo/
+text2reward/run_highway/wandb/
