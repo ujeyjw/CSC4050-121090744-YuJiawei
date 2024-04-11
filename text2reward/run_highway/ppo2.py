@@ -2,7 +2,7 @@ import gymnasium as gym
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
-
+from matplotlib import pyplot as plt
 import highway_env  # noqa: F401
 
 # ==================================
@@ -10,7 +10,7 @@ import highway_env  # noqa: F401
 # ==================================
 
 if __name__ == "__main__":
-    train = True
+    train = False
     if train:
         n_cpu = 6
         batch_size = 64
@@ -33,7 +33,7 @@ if __name__ == "__main__":
         model.save("highway_ppo/model")
 
     model = PPO.load("highway_ppo/model")
-    env = gym.make("highway-v0")
+    env = gym.make('highway-v0', render_mode='rgb_array')
     for _ in range(5):
         obs, info = env.reset()
         done = truncated = False
