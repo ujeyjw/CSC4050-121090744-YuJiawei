@@ -8,18 +8,28 @@ import gymnasium as gym
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from matplotlib import pyplot as plt
-# 初始化 W&B
 class CustomRewardLogger(BaseCallback):
-    def __init__(self, verbose=0):
+    def __init__(self, verbose=0, window_size=20):
         super(CustomRewardLogger, self).__init__(verbose)
-        self.episode_rewards = []
+        self.window_size = window_size  
+        self.episode_rewards = [] 
+        self.current_rewards = []  
 
     def _on_step(self) -> bool:
+        reward = self.locals['rewards'][0]
+        self.current_rewards.append(reward) 
+        
         info = self.locals['infos'][0]
-        self.episode_rewards.append(self.locals['rewards'][0])
         if info.get('terminal_observation') is not None:
-            wandb.log({"episode_reward": sum(self.episode_rewards)})
-            self.episode_rewards = []
+            total_reward = sum(self.current_rewards)
+            self.episode_rewards.append(total_reward)
+            self.current_rewards = []  
+
+            if len(self.episode_rewards) >= self.window_size:
+                average_reward = sum(self.episode_rewards) / len(self.episode_rewards)
+                wandb.log({"average_episode_reward": average_reward})
+                self.episode_rewards = []  
+
         return True
 def evaluate_model_and_record_video(model, video_filename='evaluation.mp4', num_episodes=5):
     env = gym.make('highway-v0', render_mode='rgb_array')
