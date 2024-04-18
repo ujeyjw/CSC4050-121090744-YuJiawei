@@ -1,0 +1,1 @@
+python highway_iter.py --TASK Highway --MODEL_NAME gpt-4 --generated_reward_func ./general1.py --motion_data /home/qi47/codes/project_reward/text2reward/run_highway/vehicle_descriptions_local.txt

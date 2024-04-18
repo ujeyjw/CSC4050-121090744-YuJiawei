@@ -4,3 +4,4 @@ text2reward/run_metaworld/logs/
 *txt
 text2reward/run_highway/highway_ppo/
 text2reward/run_highway/wandb/
+*zip

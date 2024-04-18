@@ -1,1 +1,1 @@
-python highway_exp.py --TASK Highway --MODEL_NAME gpt-3.5-turbo
+python highway_exp.py --TASK Highway --MODEL_NAME gpt-4

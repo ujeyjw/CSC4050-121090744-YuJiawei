@@ -33,7 +33,7 @@ if __name__ == "__main__":
         model.save("highway_ppo/model")
 
     model = PPO.load("highway_ppo/model")
-    env = gym.make('highway-v0', render_mode='rgb_array')
+    env = gym.make('highway-v0', render_mode='human')
     for _ in range(5):
         obs, info = env.reset()
         done = truncated = False

@@ -1,7 +1,8 @@
 import os, argparse
-
-from code_generation.single_flow.zero_shot.generation_highway import ZeroShotGenerator
-from code_generation.single_flow.classlike_prompt.high_way_prompt import HIGHWAY_PROMPT
+import inspect
+import importlib.util
+from code_generation.interactive.basic.generation_highway_iter import IterGenerator
+from code_generation.interactive.classlike_prompt.high_way_iter_prompt import HIGHWAY_ITER_PROMPT
 
 instruction_mapping = {
     "Highway": "The ego-vehicle is driving on a multilane highway populated with other vehicles. The agent's objective is to reach a high speed while avoiding collisions with neighbouring vehicles. Driving on the right side of the road is also rewarded.",
@@ -82,16 +83,23 @@ environment_mapping = {
     "Racetrack" : Racetrack
 }
 
-mapping_dicts = {
-    "self.robot.ee_position": "obs[:3]",
-    "self.robot.gripper_openness": "obs[3]",
-    "self.obj1.position": "obs[4:7]",
-    "self.obj1.quaternion": "obs[7:11]",
-    "self.obj2.position": "obs[11:14]",
-    "self.obj2.quaternion": "obs[14:18]",
-    "self.goal_position": "self.env._get_pos_goal()",
-}
-
+# mapping_dicts = {
+#     "self.robot.ee_position": "obs[:3]",
+#     "self.robot.gripper_openness": "obs[3]",
+#     "self.obj1.position": "obs[4:7]",
+#     "self.obj1.quaternion": "obs[7:11]",
+#     "self.obj2.position": "obs[11:14]",
+#     "self.obj2.quaternion": "obs[14:18]",
+#     "self.goal_position": "self.env._get_pos_goal()",
+# }
+def get_function_source(function_path):
+    spec = importlib.util.spec_from_file_location("module_name", function_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    function_name = "_reward"
+    function = getattr(module, function_name)
+    function_source = inspect.getsource(function)
+    return function_source
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
@@ -99,17 +107,21 @@ if __name__ == '__main__':
                         help="choose one task from: Highway, Merge, Roundabout, Parking, Intersection, Racetrack")
     parser.add_argument('--FILE_PATH', type=str, default=None)
     parser.add_argument('--MODEL_NAME', type=str, default="gpt-4")
-    
+    parser.add_argument('--generated_reward_func', type=str, default=None)
+    parser.add_argument('--motion_data', type=str, default=None)
     
     args = parser.parse_args()
     # File path to save result
     if args.FILE_PATH == None:
-        args.FILE_PATH = "results/{}/highway-zeroshot/{}.txt".format(args.MODEL_NAME, args.TASK)
+        args.FILE_PATH = "results/{}/highway-iter/{}.txt".format(args.MODEL_NAME, args.TASK)
     os.makedirs(args.FILE_PATH, exist_ok=True)
 
-    code_generator = ZeroShotGenerator(HIGHWAY_PROMPT, args.MODEL_NAME)
+    function_source = get_function_source(args.generated_reward_func)
+    with open(args.motion_data, 'r') as file:
+        motion = file.read()
+    code_generator = IterGenerator(HIGHWAY_ITER_PROMPT, args.MODEL_NAME)
     # general_code, specific_code = code_generator.generate_code(environment_mapping[args.TASK], instruction_mapping[args.TASK], mapping_dicts)
-    general_code = code_generator.generate_code(environment_mapping[args.TASK], instruction_mapping[args.TASK], mapping_dicts)
+    general_code = code_generator.generate_code(environment_mapping[args.TASK], instruction_mapping[args.TASK], function_source, motion)
 
     with open(os.path.join(args.FILE_PATH, "general.py"), "w") as f:
         f.write(general_code)
