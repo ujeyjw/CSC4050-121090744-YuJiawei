@@ -159,56 +159,56 @@ class CustomRewardLogger(BaseCallback):
 
         return True
 
-def generate_vehicle_descriptions(vehicles):
-    descriptions = []
-    for idx, vehicle in enumerate(vehicles):
-        collision_status = "Collided" if vehicle.crashed else "No collision"
-        description = (
-            f"Vehicle Index: {idx + 1}, "  # Using index as a placeholder for ID
-            f"Lane: {vehicle.lane_index[2] + 1}, "
-            f"Position: ({vehicle.position[0]:.2f}, {vehicle.position[1]:.2f}), "
-            f"Speed: {vehicle.speed:.2f} m/s, "
-            f"Direction: {np.rad2deg(vehicle.heading):.2f} degrees, "
-            f"Collision Status: {collision_status}"
-        )
-        descriptions.append(description)
-    return descriptions
-# def generate_vehicle_descriptions(agent_vehicle, vehicles, proximity_threshold=80):
-#     """ Generate descriptions only for the agent and nearby vehicles.
-    
-#     :param agent_vehicle: The agent vehicle to focus on.
-#     :param vehicles: List of all vehicles.
-#     :param proximity_threshold: Distance threshold to consider a vehicle "nearby" (in meters).
-#     :return: List of descriptions for the agent and nearby vehicles.
-#     """
+# def generate_vehicle_descriptions(vehicles):
 #     descriptions = []
-#     agent_position = np.array(agent_vehicle.position)
-
-#     # Add description for the agent vehicle
-#     descriptions.append(
-#         f"Agent Vehicle -- Lane: {agent_vehicle.lane_index[2] + 1}, "
-#         f"Position: ({agent_vehicle.position[0]:.2f}, {agent_vehicle.position[1]:.2f}), "
-#         f"Speed: {agent_vehicle.speed:.2f} km/h, "
-#         f"Direction: {np.rad2deg(agent_vehicle.heading):.2f} degrees, "
-#         f"Collision Status: {'Collided' if agent_vehicle.crashed else 'No collision'}"
-#     )
-
-#     # Check other vehicles if they are in proximity of the agent
-#     for vehicle in vehicles:
-#         if vehicle is not agent_vehicle:
-#             vehicle_position = np.array(vehicle.position)
-#             distance = np.linalg.norm(vehicle_position - agent_position)
-#             if distance <= proximity_threshold:
-#                 descriptions.append(
-#                     f"Nearby Vehicle -- Lane: {vehicle.lane_index[2] + 1}, "
-#                     f"Position: ({vehicle.position[0]:.2f}, {vehicle.position[1]:.2f}), "
-#                     f"Speed: {vehicle.speed:.2f} km/h, "
-#                     f"Direction: {np.rad2deg(vehicle.heading):.2f} degrees, "
-#                     f"Collision Status: {'Collided' if vehicle.crashed else 'No collision'}, "
-#                     f"Distance from Agent: {distance:.2f} m"
-#                 )
-
+#     for idx, vehicle in enumerate(vehicles):
+#         collision_status = "Collided" if vehicle.crashed else "No collision"
+#         description = (
+#             f"Vehicle Index: {idx + 1}, "  # Using index as a placeholder for ID
+#             f"Lane: {vehicle.lane_index[2] + 1}, "
+#             f"Position: ({vehicle.position[0]:.2f}, {vehicle.position[1]:.2f}), "
+#             f"Speed: {vehicle.speed:.2f} m/s, "
+#             f"Direction: {np.rad2deg(vehicle.heading):.2f} degrees, "
+#             f"Collision Status: {collision_status}"
+#         )
+#         descriptions.append(description)
 #     return descriptions
+def generate_vehicle_descriptions(agent_vehicle, vehicles, proximity_threshold=80):
+    """ Generate descriptions only for the agent and nearby vehicles.
+    
+    :param agent_vehicle: The agent vehicle to focus on.
+    :param vehicles: List of all vehicles.
+    :param proximity_threshold: Distance threshold to consider a vehicle "nearby" (in meters).
+    :return: List of descriptions for the agent and nearby vehicles.
+    """
+    descriptions = []
+    agent_position = np.array(agent_vehicle.position)
+
+    # Add description for the agent vehicle
+    descriptions.append(
+        f"Agent Vehicle -- Lane: {agent_vehicle.lane_index[2] + 1}, "
+        f"Position: ({agent_vehicle.position[0]:.2f}, {agent_vehicle.position[1]:.2f}), "
+        f"Speed: {agent_vehicle.speed:.2f} km/h, "
+        f"Direction: {np.rad2deg(agent_vehicle.heading):.2f} degrees, "
+        f"Collision Status: {'Collided' if agent_vehicle.crashed else 'No collision'}"
+    )
+
+    # Check other vehicles if they are in proximity of the agent
+    for vehicle in vehicles:
+        if vehicle is not agent_vehicle:
+            vehicle_position = np.array(vehicle.position)
+            distance = np.linalg.norm(vehicle_position - agent_position)
+            if distance <= proximity_threshold:
+                descriptions.append(
+                    f"Nearby Vehicle -- Lane: {vehicle.lane_index[2] + 1}, "
+                    f"Position: ({vehicle.position[0]:.2f}, {vehicle.position[1]:.2f}), "
+                    f"Speed: {vehicle.speed:.2f} km/h, "
+                    f"Direction: {np.rad2deg(vehicle.heading):.2f} degrees, "
+                    f"Collision Status: {'Collided' if vehicle.crashed else 'No collision'}, "
+                    f"Distance from Agent: {distance:.2f} m"
+                )
+
+    return descriptions
 def evaluate_model_and_record_video(model, video_filename='evaluation.mp4', num_episodes=5, description_filename='vehicle_descriptions.txt', if_wandb=False):
     env = gym.make('highway-custom-v0', render_mode='rgb_array')
     with imageio.get_writer(video_filename, fps=5) as video, open(description_filename, 'w') as desc_file:
@@ -227,17 +227,18 @@ def evaluate_model_and_record_video(model, video_filename='evaluation.mp4', num_
                 # breakpoint()
                 vehicles = env.unwrapped.road.vehicles
                 # breakpoint()
-                # agent_vehicle = env.unwrapped.road.vehicles[0]
-                # descriptions = generate_vehicle_descriptions(agent_vehicle, vehicles)
-                descriptions = generate_vehicle_descriptions(vehicles)
+                agent_vehicle = env.unwrapped.road.vehicles[0]
+                descriptions = generate_vehicle_descriptions(agent_vehicle, vehicles)
+                # descriptions = generate_vehicle_descriptions(vehicles)
                 desc_file.write(f"Time: {env.unwrapped.time:.2f}s\n")
                 for desc in descriptions:
                     desc_file.write(desc + '\n')
                 desc_file.write('\n')
+                breakpoint()
             desc_file.write('\n')  # Add a space between episodes for clarity
     if if_wandb:
         # Create a wandb Artifact for the description file
-        artifact = wandb.Artifact('vehicle_descriptions', type='dataset')
+        artifact = wandb.Artifact('vehicle_descriptions_local_1', type='dataset')
         artifact.add_file(description_filename)
 
         # Use the log_artifact method to log the artifact to wandb

@@ -71,12 +71,12 @@ class HighwayEnvChangeReward(AbstractEnv):
                 "duration": 40,  # [s]
                 "ego_spacing": 2,
                 "vehicles_density": 1,
-                "collision_reward": -10,  # The reward received when colliding with a vehicle.
-                "right_lane_reward": 0.2,  # The reward received when driving on the right-most lanes, linearly mapped to
+                "collision_reward": -1,  # The reward received when colliding with a vehicle.
+                "right_lane_reward": 0.1,  # The reward received when driving on the right-most lanes, linearly mapped to
                 # zero for other lanes.
-                "high_speed_reward": 0.5,  # The reward received when driving at full speed, linearly mapped to zero for
+                "high_speed_reward": 0.4,  # The reward received when driving at full speed, linearly mapped to zero for
                 # lower speeds according to config["reward_speed_range"].
-                "lane_change_reward": -0.05,  # The reward received at each lane change action.
+                "lane_change_reward": 0,  # The reward received at each lane change action.
                 "reward_speed_range": [20, 30],
                 "normalize_reward": True,
                 "offroad_terminal": False,
@@ -155,42 +155,47 @@ class HighwayEnvChangeReward(AbstractEnv):
     #     if self.config["normalize_reward"]:
     #         reward = np.tanh(reward)
     #     return reward
-    def _reward(self, action) -> float:
-        
-        """
-        Enhanced reward function to improve lane discipline, maintain safer distances,
-        encourage smoother speed control, and discourage unnecessary lane changes.
-        """
-        if self.vehicle.crashed:
-            return self.config["collision_reward"]  # Return the collision penalty
-        
-        # Calculate the speed reward: normalize the vehicle's speed to be between 0 and 1 in the desired range
-        speed_reward = (
-            (self.vehicle.speed - self.config["reward_speed_range"][0]) /
-            (self.config["reward_speed_range"][1] - self.config["reward_speed_range"][0])
-        )
-        speed_reward = max(0, min(1, speed_reward)) * self.config["high_speed_reward"]  # Bound the reward between 0 and 1
-        
-        # Calculate the lane position reward: encourage staying in right-most lanes
-        max_lane_index = max(lane[2] for lane in self.road.network.all_side_lanes(self.vehicle.lane_index))
-        lane_position_reward = (
-            (max_lane_index - self.vehicle.lane_index[2]) / max_lane_index
-        ) * self.config["right_lane_reward"]
-        
-        # Optional: Add a lane change penalty or reward based on action taken
-        lane_change_penalty = 0
-        if action == 0 or action == 2:  # Assuming actions 0 and 2 are LANE_LEFT and LANE_RIGHT
-            lane_change_penalty = self.config["lane_change_reward"]
-        
-        # Sum the components to get the total reward
-        total_reward = speed_reward + lane_position_reward + lane_change_penalty
-        
-        # Optionally normalize the reward to be between 0 and 1
-        if self.config.get("normalize_reward", False):
-            total_reward = (total_reward + 1) / 2  # assuming rewards are between -1 and 1 initially
-        
-        return total_reward
 
+        
+    def _reward(self, action) -> float:
+
+        reward = 0
+
+        # High speed reward optimization
+        max_speed = self.config["reward_speed_range"][1]
+        speed_fraction = self.vehicle.speed / max_speed
+        reward += speed_fraction * 0.5  # Scale factor for speed reward
+
+        # Collision penalty
+        if self.vehicle.crashed:
+            reward -= 5  # Significant penalty for collisions
+
+        # Lane efficiency
+        lanes_total = self.config['lanes_count']
+        lane_id = self.vehicle.lane_index[2]
+        if lane_id < lanes_total / 2:
+            # Less reward for being in lanes closer to the median
+            reward -= (lanes_total / 2 - lane_id) * 0.05
+        else:
+            # Bonus for being in lanes closer to the rightmost lane
+            reward += (lane_id - lanes_total / 2) * 0.1
+        vehicles_ahead = self.road.neighbour_vehicles(self.vehicle)
+        # Aggressive lane changing based on traffic conditions
+        if action == 0 or action == 2:
+            reward -= 0.1  # General penalty to minimize excessive lane changing
+            if vehicles_ahead[0]:
+                # Increasing reward if the lane change contributes to overtaking
+                if vehicles_ahead[0].speed < self.vehicle.speed:
+                    reward += 0.2
+
+        # Maintaining a safe following distance with a dynamic aspect based on speed
+        if vehicles_ahead[0]:  # Vehicles ahead[0] is the leading vehicle in the current lane
+            distance_to_lead = np.linalg.norm(vehicles_ahead[0].position - self.vehicle.position)
+            desired_distance = max(15, 2 * self.vehicle.speed / 3.6)  # Desired distance increases with speed (meters)
+            if distance_to_lead < desired_distance:
+                reward -= 0.5  # Penalty if too close relative to the speed
+
+        return reward
     # def _rewards(self, action: Action) -> Dict[Text, float]:
     #     neighbours = self.road.network.all_side_lanes(self.vehicle.lane_index)
     #     lane = (
@@ -386,16 +391,16 @@ register(
     entry_point='text2reward.run_highway.myenv2:HighwayEnvChangeReward')
 
 if __name__ == "__main__":
-    if_wandb = False
+    if_wandb = True
     
     config={
             "policy_type": "MlpPolicy",
             "total_timesteps": 200000,
             "env_name": 'highway-custom-v0'}
     if if_wandb:
-        wandb.init(project="highway", entity="emanon47", config=config, name="highway-custom-v2_4.0",notes="trajectory guided")
+        wandb.init(project="highway", entity="emanon47", config=config, name="highway-custom-4.0-6",notes="trajectory guided_4.0_Turbo_iter_2")
 
-    train = False
+    train = True
     if train:
         n_cpu = 6
         batch_size = 64
@@ -414,12 +419,12 @@ if __name__ == "__main__":
             device = 'cuda'
         )
         model.learn(total_timesteps=config["total_timesteps"], callback=CustomRewardLogger())
-        model_path = "HighwayCustom_ppo_model_4_trajectory"
+        model_path = "HighwayCustom_ppo_model_6_trajectory_i2"
         model.save(model_path)
         if if_wandb:
             wandb.save(model_path)
 
-    model = PPO.load("HighwayCustom_ppo_model_4_trajectory")
+    model = PPO.load("HighwayCustom_ppo_model_6_trajectory_i2")
     evaluate_model_and_record_video(model, if_wandb=if_wandb)
     if if_wandb:
         wandb.finish()

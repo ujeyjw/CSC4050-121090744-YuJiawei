@@ -45,13 +45,14 @@ def evaluate_model_and_record_video(model, video_filename='evaluation.mp4', num_
     wandb.log({"evaluation_video": wandb.Video(video_filename, fps=10, format="gif")})
 
 def main(mode='train'):
-    wandb.init(project="highway", entity="emanon47", config={
-        "policy_type": "MlpPolicy",
-        "total_timesteps": 4e5,
-        "env_name": "highway-v0"
-    }, name="highway-v0-3")
+    if_wandb = False
+    config={
+            "policy_type": "MlpPolicy",
+            "total_timesteps": 200000,
+            "env_name": 'highway-v0'}
+    if if_wandb:
+        wandb.init(project="highway", entity="emanon47", config=config, name="highway-v0-3")
 
-    config = wandb.config
     checkpoint_dir = './checkpoints/'
     latest_checkpoint = max([checkpoint_dir + d for d in os.listdir(checkpoint_dir)], key=os.path.getmtime, default=None)
 
@@ -69,6 +70,7 @@ def main(mode='train'):
             gamma=0.8,
             verbose=2,
             tensorboard_log="./highway_ppo_tensorboard/",
+            device='cuda'
         )
 
         checkpoint_callback = CheckpointCallback(save_freq=50000, save_path=checkpoint_dir,
@@ -84,8 +86,8 @@ def main(mode='train'):
             evaluate_model_and_record_video(model)
         else:
             print("No checkpoints found for evaluation.")
-
-    wandb.finish()
+    if if_wandb:
+        wandb.finish()
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == 'eval':
