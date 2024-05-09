@@ -1,5 +1,13 @@
+from typing import Any, Callable, Dict, Optional, Type, Union
+
+import numpy as np
+import torch as th
+
+from torch.nn import functional as F
+import sys
 from typing import Dict, Text
 import gymnasium as gym
+import random
 import numpy as np
 import highway_env
 from highway_env import utils
@@ -13,14 +21,13 @@ import os
 import highway_env
 import imageio
 import wandb
-from stable_baselines3 import PPO
+custom_path = '/home/qi47/codes/project_reward/text2reward/run_highway/'
+sys.path.insert(0, custom_path)
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
-
-Observation = np.ndarray
 from gymnasium.envs.registration import register
-
+from stable_baselines3.ppo_lag import PPOLagrangian
 
 
 class HighwayEnvChangeReward(AbstractEnv):
@@ -47,10 +54,10 @@ class HighwayEnvChangeReward(AbstractEnv):
                 "duration": 40,  # [s]
                 "ego_spacing": 2,
                 "vehicles_density": 1,
-                "collision_reward": -1,  # The reward received when colliding with a vehicle.
+                "collision_reward": -5,  # The reward received when colliding with a vehicle.
                 "right_lane_reward": 0.1,  # The reward received when driving on the right-most lanes, linearly mapped to
                 # zero for other lanes.
-                "high_speed_reward": 0.4,  # The reward received when driving at full speed, linearly mapped to zero for
+                "high_speed_reward": 0.8,  # The reward received when driving at full speed, linearly mapped to zero for
                 # lower speeds according to config["reward_speed_range"].
                 "lane_change_reward": 0,  # The reward received at each lane change action.
                 "reward_speed_range": [20, 30],
@@ -59,7 +66,11 @@ class HighwayEnvChangeReward(AbstractEnv):
             }
         )
         return config
-
+    # def seed(self, seed=None):
+    #     random.seed(seed)
+    #     np.random.seed(seed)
+    #     # Ensure all environment-specific components that require seeding are handled here
+    #     return [seed]
     def _reset(self) -> None:
         self._create_road()
         self._create_vehicles()
@@ -68,7 +79,7 @@ class HighwayEnvChangeReward(AbstractEnv):
         """Create a road composed of straight adjacent lanes."""
         self.road = Road(
             network=RoadNetwork.straight_road_network(
-                self.config["lanes_count"], speed_limit=30
+                self.config["lanes_count"], speed_limit=25
             ),
             np_random=self.np_random,
             record_history=self.config["show_trajectories"],
@@ -109,19 +120,40 @@ class HighwayEnvChangeReward(AbstractEnv):
         :param action: the last action performed
         :return: the corresponding reward
         """
-        reward = self.config["collision_reward"] if self.vehicle.crashed else 0.0
-    
-        # Check if the vehicle has crashed
-        if self.vehicle.crashed:
-            reward += self.config["collision_reward"]
-        
-        # Calculate reward for driving on the right-most lanes
-        reward += self.config["right_lane_reward"] * (self.vehicle.lane_index[2] / (len(self.road.network.all_side_lanes(self.vehicle.lane_index)) - 1))
-        
-        # Calculate reward for driving at high speed
-        if self.vehicle.speed >= self.config["reward_speed_range"][0]:
-            reward += self.config["high_speed_reward"] * (self.vehicle.speed - self.config["reward_speed_range"][0]) / (self.config["reward_speed_range"][1] - self.config["reward_speed_range"][0])
+        rewards = self._rewards(action)
+        reward = sum(
+            self.config.get(name, 0) * reward for name, reward in rewards.items()
+        )
+        if self.config["normalize_reward"]:
+            reward = utils.lmap(
+                reward,
+                [
+                    self.config["collision_reward"],
+                    self.config["high_speed_reward"] + self.config["right_lane_reward"],
+                ],
+                [0, 1],
+            )
+        reward *= rewards["on_road_reward"]
         return reward
+
+    def _rewards(self, action: Action) -> Dict[Text, float]:
+        neighbours = self.road.network.all_side_lanes(self.vehicle.lane_index)
+        lane = (
+            self.vehicle.target_lane_index[2]
+            if isinstance(self.vehicle, ControlledVehicle)
+            else self.vehicle.lane_index[2]
+        )
+        # Use forward speed rather than speed, see https://github.com/eleurent/highway-env/issues/268
+        forward_speed = self.vehicle.speed * np.cos(self.vehicle.heading)
+        scaled_speed = utils.lmap(
+            forward_speed, self.config["reward_speed_range"], [0, 1]
+        )
+        return {
+            "collision_reward": float(self.vehicle.crashed),
+            "right_lane_reward": lane / max(len(neighbours) - 1, 1),
+            "high_speed_reward": np.clip(scaled_speed, 0, 1),
+            "on_road_reward": float(self.vehicle.on_road),
+        }
 
     def _is_terminated(self) -> bool:
         """The episode is over if the ego vehicle crashed."""
@@ -135,44 +167,21 @@ class HighwayEnvChangeReward(AbstractEnv):
         """The episode is truncated if the time limit is reached."""
         return self.time >= self.config["duration"]
     
-class CustomRewardLogger(BaseCallback):
-    def __init__(self, verbose=0, window_size=20):
-        super(CustomRewardLogger, self).__init__(verbose)
-        self.window_size = window_size  
-        self.episode_rewards = [] 
-        self.current_rewards = []  
+class PPOLagrangianWandbCallback(BaseCallback):
+    def __init__(self):
+        super(PPOLagrangianWandbCallback, self).__init__()
 
     def _on_step(self) -> bool:
-        reward = self.locals['rewards'][0]
-        self.current_rewards.append(reward) 
-        
-        info = self.locals['infos'][0]
-        if info.get('terminal_observation') is not None:
-            total_reward = sum(self.current_rewards)
-            self.episode_rewards.append(total_reward)
-            self.current_rewards = []  
-
-            if len(self.episode_rewards) >= self.window_size:
-                average_reward = sum(self.episode_rewards) / len(self.episode_rewards)
-                wandb.log({"average_episode_reward": average_reward})
-                self.episode_rewards = []  
-
+        # Fetch the latest logged values from Logger
+        logs = dict(self.logger.name_to_value)
+        wandb.log(logs)  # Log these values to WandB
         return True
 
-# def generate_vehicle_descriptions(vehicles):
-#     descriptions = []
-#     for idx, vehicle in enumerate(vehicles):
-#         collision_status = "Collided" if vehicle.crashed else "No collision"
-#         description = (
-#             f"Vehicle Index: {idx + 1}, "  # Using index as a placeholder for ID
-#             f"Lane: {vehicle.lane_index[2] + 1}, "
-#             f"Position: ({vehicle.position[0]:.2f}, {vehicle.position[1]:.2f}), "
-#             f"Speed: {vehicle.speed:.2f} m/s, "
-#             f"Direction: {np.rad2deg(vehicle.heading):.2f} degrees, "
-#             f"Collision Status: {collision_status}"
-#         )
-#         descriptions.append(description)
-#     return descriptions
+    def _on_training_end(self):
+        # Optionally log at the end of training
+        logs = dict(self.logger.name_to_value)
+        wandb.log(logs)
+
 def generate_vehicle_descriptions(agent_vehicle, vehicles, proximity_threshold=80):
     """ Generate descriptions only for the agent and nearby vehicles.
     
@@ -209,7 +218,7 @@ def generate_vehicle_descriptions(agent_vehicle, vehicles, proximity_threshold=8
                 )
 
     return descriptions
-def evaluate_model_and_record_video(model, video_filename='evaluation.mp4', num_episodes=5, description_filename='vehicle_descriptions.txt', if_wandb=False):
+def evaluate_model_and_record_video(model, video_filename='evaluation.mp4', num_episodes=5, description_filename='vehicle_descriptions_lag.txt', if_wandb=False):
     env = gym.make('highway-custom-v0', render_mode='rgb_array')
     with imageio.get_writer(video_filename, fps=5) as video, open(description_filename, 'w') as desc_file:
         for episode in range(num_episodes):
@@ -234,7 +243,6 @@ def evaluate_model_and_record_video(model, video_filename='evaluation.mp4', num_
                 for desc in descriptions:
                     desc_file.write(desc + '\n')
                 desc_file.write('\n')
-                breakpoint()
             desc_file.write('\n')  # Add a space between episodes for clarity
     if if_wandb:
         # Create a wandb Artifact for the description file
@@ -246,68 +254,85 @@ def evaluate_model_and_record_video(model, video_filename='evaluation.mp4', num_
 
         # Log the video separately
         wandb.log({"evaluation_video": wandb.Video(video_filename, fps=5, format="mp4")})
-# def evaluate_model_and_record_video(model, video_filename='evaluation.mp4', num_episodes=5, description_filename='vehicle_descriptions.txt', if_wandb=False):
-#     env = gym.make('highway-custom-v0', render_mode='rgb_array')
-#     with imageio.get_writer(video_filename, fps=5) as video, open(description_filename, 'w') as desc_file:
-#         for episode in range(num_episodes):
-#             obs = env.reset()
-#             done = truncated = False
-#             desc_file.write(f"Episode {episode+1}:\n")
-#             while not done and not truncated:
-#                 action, _ = model.predict(obs, deterministic=True)
-#                 obs, reward, done, truncated, info = env.step(action)
-#                 frame = env.render()
-#                 video.append_data(frame)
 
-#                 # Assuming the first vehicle is the agent
-#                 agent_vehicle = env.unwrapped.road.vehicles[0]
-#                 vehicles = env.unwrapped.road.vehicles
-#                 descriptions = generate_vehicle_descriptions(agent_vehicle, vehicles)
-#                 desc_file.write(f"Time: {env.unwrapped.time:.2f}s\n")
-#                 for desc in descriptions:
-#                     desc_file.write(desc + '\n')
-#                 desc_file.write('\n')
-#             desc_file.write('\n')
-#     if if_wandb:
-#         # Create a wandb Artifact for the description file
-#         artifact = wandb.Artifact('vehicle_descriptions', type='dataset')
-#         artifact.add_file(description_filename)
-
-#         # Use the log_artifact method to log the artifact to wandb
-#         wandb.log_artifact(artifact)
-
-#         # Log the video separately
-#         wandb.log({"evaluation_video": wandb.Video(video_filename, fps=5, format="mp4")})
+def cost_function(obs, action) -> float:
+    """
+    Calculate a cost based on the velocity of the ego-vehicle, penalizing speeds under 15.
+    :param obs: Observations/state of the environment, assumed to include velocity components of the ego vehicle.
+    :param action: The last action taken by the agent (not used in this implementation).
+    :return: Cost value as a float, with a penalty if speed is below 15.
+    """
+    # Constants for velocity threshold and penalty
+    
+    SPEED_THRESHOLD = (25)/(80)  # Minimum acceptable speed
+    
+    SPEED_PENALTY = 5 # Penalty applied if below the speed threshold
+    
+    # Extract the velocity components from the observation
+    vx = obs[0][3]  # Assuming 'vx' is at index 3 of the first vehicle (ego vehicle)
+    vy = obs[0][4]  # Assuming 'vy' is at index 4 of the first vehicle (ego vehicle)
+    
+    # Calculate the current speed from components
+    current_speed = vx
+    
+    # Apply penalty if speed is below the threshold
+    if current_speed < SPEED_THRESHOLD:
+        return SPEED_PENALTY
+    else:
+        return 0.0  # No cost if speed is at or above the threshold
 
 register(
-    id='highway-custom-v0',
-    entry_point='text2reward.run_highway.myenv:HighwayEnvChangeReward')
+        id='highway-custom-v0',
+        entry_point='text2reward.run_highway.cppo:HighwayEnvChangeReward')
 
+# def make_env(env_id, rank, seed=0):
+#     def _init():
+#         env = gym.make(env_id)
+#         env.unwrapped.seed(seed + rank)
+#         return env
+#     return _init
 if __name__ == "__main__":
-    if_wandb = False
+
+    if_wandb = True
+    
     config={
             "policy_type": "MlpPolicy",
-            "total_timesteps": 200000,
+            "total_timesteps": 300000,
             "env_name": 'highway-custom-v0'}
     if if_wandb:
-        wandb.init(project="highway", entity="emanon47", config=config, name="highway-custom-v04")
-    train = False
+        wandb.init(project="highway", entity="emanon47", config=config, name="highway-custom-lag_3")
+
+    train = True
     if train:
         n_cpu = 6
         batch_size = 64
-        env = make_vec_env('highway-custom-v0', n_envs=n_cpu, vec_env_cls=SubprocVecEnv)
-        model = PPO.load("HighwayCustom_ppo_model")
-        model.set_env(env)
-        model.learn(total_timesteps=config.total_timesteps, callback=CustomRewardLogger())
-        model_path = "HighwayCustom_ppo_update_model"
+        # env = SubprocVecEnv([make_env(config["env_name"], i) for i in range(n_cpu)])
+        env = make_vec_env("highway-custom-v0", n_envs=n_cpu, vec_env_cls=SubprocVecEnv)
+        env = gym.make(config["env_name"]) 
+        model = PPOLagrangian(
+            policy=config["policy_type"],
+            env=env,
+            policy_kwargs=dict(net_arch=[dict(pi=[256, 256], vf=[256, 256])]),
+            n_steps=128,
+            batch_size=64,
+            n_epochs=10,
+            learning_rate=5e-4,
+            verbose=2,
+            tensorboard_log="./highway_ppo_lagrangian_tensorboard/",
+            device='cuda'
+        )
+        
+        # model = PPOLagrangian.load("highway_ppo_lagrangian_model_2")
+        # model.set_env(env)
+        wandb_callback = PPOLagrangianWandbCallback()
+
+        model.learn(total_timesteps=config["total_timesteps"], cost_function = cost_function,callback=wandb_callback)
+        model_path = "highway_ppo_lagrangian_model_3"
         model.save(model_path)
         if if_wandb:
             wandb.save(model_path)
 
-    model = PPO.load("HighwayCustom_ppo_update_model_3.5")
+    model = PPOLagrangian.load("highway_ppo_lagrangian_model_3")
     evaluate_model_and_record_video(model, if_wandb=if_wandb)
     if if_wandb:
         wandb.finish()
-
-
-

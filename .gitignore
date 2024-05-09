@@ -1,7 +1,8 @@
 text2reward/run_metaworld/wandb/
 text2reward/run_metaworld/logs/
+*.txt
 **/__pycache__/
-*txt
 text2reward/run_highway/highway_ppo/
+text2reward/run_highway/highway_ppo_lagrangian_tensorboard/
 text2reward/run_highway/wandb/
 *zip

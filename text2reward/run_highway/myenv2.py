@@ -157,19 +157,57 @@ class HighwayEnvChangeReward(AbstractEnv):
     #     return reward
 
         
-    def _reward(self, action) -> float:
+    # def _reward(self, action) -> float:
+    #     reward = 0
 
+    #     # 1. High speed reward, more significant when lanes are less occupied
+    #     max_speed = self.config["reward_speed_range"][1]
+    #     speed_fraction = self.vehicle.speed / max_speed
+    #     reward += speed_fraction * 0.5  # Scale factor for speed reward
+
+    #     # 2. Collision penalty
+    #     if self.vehicle.crashed:
+    #         reward -= 5
+
+    #     # 3. Lane changing and overtaking
+    #     if action == 0 or action == 2:  # LANE_LEFT or LANE_RIGHT
+    #         reward -= 0.1  # Discourage frequent lane changes
+    #         # Encourage overtaking: Check speed differential and position to the vehicle in the target lane
+    #         lead_vehicle, _ = self.road.neighbour_vehicles(self.vehicle)
+    #         if lead_vehicle and (self.vehicle.speed > lead_vehicle.speed):
+    #             reward += 0.3  # Reward overtaking slower vehicles
+
+    #     # 4. Safe distance reward/punishment
+    #     front_vehicle, _ = self.road.neighbour_vehicles(self.vehicle)
+    #     if front_vehicle:
+    #         distance = np.linalg.norm(self.vehicle.position - front_vehicle.position)
+    #         safe_distance = self.vehicle.speed / 2  # Dynamic safe distance
+    #         if distance < safe_distance:
+    #             reward -= ((safe_distance - distance) / safe_distance)  # Proportionately penalize based on shortfall
+
+    #     return reward
+
+    def _reward(self, action) -> float:
         reward = 0
 
-        # High speed reward optimization
+        # 1. Reward for High Speed
         max_speed = self.config["reward_speed_range"][1]
         speed_fraction = self.vehicle.speed / max_speed
-        reward += speed_fraction * 0.5  # Scale factor for speed reward
+        reward += 0.8 * speed_fraction  # weight high speed more
 
-        # Collision penalty
+        # 2. Collision penalty
         if self.vehicle.crashed:
-            reward -= 5  # Significant penalty for collisions
+            reward -= 5  # Major penalty for collision
 
+        # 3. Safe Distance Maintenance
+        front_vehicle, _ = self.road.neighbour_vehicles(self.vehicle)
+        if front_vehicle:
+            distance = np.linalg.norm(self.vehicle.position - front_vehicle.position)
+            safe_distance = min(self.vehicle.speed / 3.6,5)  # Safe distance increases with speed
+            if distance < safe_distance:
+                reward -= (safe_distance - distance) / safe_distance  # Penalize based on the proximity
+
+        
         # Lane efficiency
         lanes_total = self.config['lanes_count']
         lane_id = self.vehicle.lane_index[2]
@@ -179,22 +217,6 @@ class HighwayEnvChangeReward(AbstractEnv):
         else:
             # Bonus for being in lanes closer to the rightmost lane
             reward += (lane_id - lanes_total / 2) * 0.1
-        vehicles_ahead = self.road.neighbour_vehicles(self.vehicle)
-        # Aggressive lane changing based on traffic conditions
-        if action == 0 or action == 2:
-            reward -= 0.1  # General penalty to minimize excessive lane changing
-            if vehicles_ahead[0]:
-                # Increasing reward if the lane change contributes to overtaking
-                if vehicles_ahead[0].speed < self.vehicle.speed:
-                    reward += 0.2
-
-        # Maintaining a safe following distance with a dynamic aspect based on speed
-        if vehicles_ahead[0]:  # Vehicles ahead[0] is the leading vehicle in the current lane
-            distance_to_lead = np.linalg.norm(vehicles_ahead[0].position - self.vehicle.position)
-            desired_distance = max(15, 2 * self.vehicle.speed / 3.6)  # Desired distance increases with speed (meters)
-            if distance_to_lead < desired_distance:
-                reward -= 0.5  # Penalty if too close relative to the speed
-
         return reward
     # def _rewards(self, action: Action) -> Dict[Text, float]:
     #     neighbours = self.road.network.all_side_lanes(self.vehicle.lane_index)
@@ -398,7 +420,7 @@ if __name__ == "__main__":
             "total_timesteps": 200000,
             "env_name": 'highway-custom-v0'}
     if if_wandb:
-        wandb.init(project="highway", entity="emanon47", config=config, name="highway-custom-4.0-6",notes="trajectory guided_4.0_Turbo_iter_2")
+        wandb.init(project="highway", entity="emanon47", config=config, name="highway-custom-4.0-10",notes="trajectory guided_4.0_Turbo_iter_4_2")
 
     train = True
     if train:
@@ -418,13 +440,18 @@ if __name__ == "__main__":
             tensorboard_log="./HighwayCustom_ppo_tensorboard/",
             device = 'cuda'
         )
+        # model = PPO.load("HighwayCustom_ppo_model_8_trajectory_i4")
+        # model.set_env(env)
         model.learn(total_timesteps=config["total_timesteps"], callback=CustomRewardLogger())
-        model_path = "HighwayCustom_ppo_model_6_trajectory_i2"
+        model_path = "HighwayCustom_ppo_model_i4_3"
+        
+        # model.learn(total_timesteps=config["total_timesteps"], callback=CustomRewardLogger())
+        # model_path = "HighwayCustom_ppo_model_7_trajectory_i3"
         model.save(model_path)
         if if_wandb:
             wandb.save(model_path)
 
-    model = PPO.load("HighwayCustom_ppo_model_6_trajectory_i2")
+    model = PPO.load("HighwayCustom_ppo_model_i4_3")
     evaluate_model_and_record_video(model, if_wandb=if_wandb)
     if if_wandb:
         wandb.finish()

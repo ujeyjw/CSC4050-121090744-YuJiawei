@@ -1,11 +1,15 @@
 from openai import OpenAI
 
-# client = OpenAI(api_key="your-api-key-here") # 如果想在代码中设置Api-key而不是全局变量就用这个代码
-client = OpenAI()
+client = OpenAI(api_key="") # 如果想在代码中设置Api-key而不是全局变量就用这个代码
+# client = OpenAI()
 with open("ppo_lag.txt", 'r') as constraint_file:
     constraint = constraint_file.read()  
 with open("environment.txt", 'r') as env_file:
     environment = env_file.read()  
+with open("vehicle_descriptions_ppo.txt", 'r') as mot_file1:
+    motion1 = mot_file1.read()  
+with open("vehicle_descriptions_standard.txt", 'r') as mot_file2:
+    motion2 = mot_file2.read()  
 messages = [
     {"role": "system", "content": "You are an expert in autonomous driving, reinforcement learning and code generation. We are going to use a simulated vehicle to complete given driving tasks."},
     {"role": "user", "content": 
@@ -60,12 +64,18 @@ def _rewards(self, action: Action) -> Dict[Text, float]:
         "high_speed_reward": np.clip(scaled_speed, 0, 1),
         "on_road_reward": float(self.vehicle.on_road),
     }}
-    
+Feed these reward codes into the environment, and use the RL algorithm to train the policy. After training, I can evaluate the agent and get a text file which details the motion data of an autonomous vehicle during evaluation. 
+The following block is about the motion details.
+{motion1}
+
+As a comparison, I would like to show you my ideal motion data for agent in this task. Please compare these two motion data and think about what kind of cost function we should write.
+{motion2}
+
 I want it to design a constraint and write a cost function
 1. Please think step by step and tell me what does this task mean;
-2. Do not invent any variable or attribute that is not given.
-3. When you writing code, you can also add some comments as your thought.
-
+2. Then write a function that format as `def cost_function(obs, action) -> float` and returns the cost. Just the function body is fine.
+3. Do not invent any variable or attribute that is not given.
+4. When you writing code, you can also add some comments as your thought.
 """}
 ]
 completion = client.chat.completions.create(
@@ -73,9 +83,9 @@ completion = client.chat.completions.create(
   seed=2024,
   messages=messages
 )
-with open('prompt_lag_0.txt', 'a') as file:
+with open('prompt_lag_1.txt', 'a') as file:
     for i in range(len(messages)):
         file.write(messages[i]['content'])
 
-with open('generation_lag_0.txt', 'w') as file:
+with open('generation_lag_1.txt', 'w') as file:
     file.write(completion.choices[0].message.content)  # 将字符串写入文件
